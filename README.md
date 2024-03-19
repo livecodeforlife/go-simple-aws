@@ -17,68 +17,49 @@ Please design a program to do a zero downtime deploy using standard EC2 and rela
 
 # Pseudo code for full program
 
-var Dns
-var Network
-var SecurityGroup
-var NetworkACL
-var IAMPolicy
-var MyServiceElb
-var MyServiceElbIamPolice
-var MyServiceElbIamRole
-var MyServiceELBGreen
-var MyServiceElbGreenPolice
-var MyServiceElbGreenRole
-var MyServiceELBBlue
-var MyServiceElbBluePolice
-var MyServiceElbBlueRole
-var MyServiceInstanceLaunchTemplate
-var MyServiceAutoScalingGroup
-var MyServiceAmi
-var MyServiceAmiSecurityGroup
-var MyServiceAmiIamPolice
-var MyServiceAmiIamRole
-var MyServiceInstance
-var MyServiceInstanceSecurityGroup
-var MyServiceInstanceIamPolice
-var MyServiceInstanceIamRole
+let mainVpc = createOrUpdateVpc(VPCDefinition)
+let mainDns = createOrUpdateDns(DNSDefinition)
+let mainSubnet = createOrUpdateSubnet(SubnetDefinition(vpc))
+let mainElb = createOrUpdateElb(ELBDefinition(mainDns,mainSubnet,mainVpc))
+
+let greenSubnet = createOrUpdateSubnet(SubnetDefinition(vpc))
+let greenElb = createOrUpdateElb(ElbDefinition(greenSubnet,mainVpc))
+let greenLaunchTemplate = createOrUpdateASGLaunchTemplate(ElbLaunchTemplate)
+let greenAutoScale = createOrUpdateGreenAutoScale(greenAutoScale,greenElb)
+
+let blueSubnet = createOrUpdateSubnet(SubnetDefinition(vpc))
+let blueElb = createOrUpdateElb(ElbDefinition(blueSubnet,mainVpc))
+let blueLaunchTemplate = createOrUpdateASGLaunchTemplate(ElbLaunchTemplate)
+let blueAutoScale = createOrUpdateGreenAutoScale(greenAutoScale,blueElb)
+
+let image = compile image from source code
+let deployLauchTemplate;
+let deployElb;
+if mainElb.getActiveEnvironment is "blue" {
+    deployLaunchTemplate = greenLaunchTemplate
+    deployElb = greenElb
+    deployAutoScale = greenAutoScale
+} else {
+    deployLaunchTemplate = blueLaunchTemplate
+    deployElb = blueElb
+    deployAutoScale = blueAutoScale
+}
+perform_smoke_tests(deployElb)
+perform_switch(mainElb,deployElb)
 
 
-Pseudo code:
+createOrUpdateVpc(VPCDefinition):
 
-Ensure main VPC is created
-    Ensure VPC Security Group is created
-    Ensure VPC Network ACL is created
-Ensure DNS is created
-    Ensure DNS certificate is created
-Ensure the main Load Balancer is created
-    Ensure public subnet for main Load Balancer is created
-        Ensure Public Subnet Security Group is created
-        Ensure Public Subnet Network Acl is created
-    Ensure DNS is pointing to the main Load Balancer
+createOrUpdateDns(DNSDefinition):
 
+createOrUpdateSubnet(SubnetDefinition(vpc)):
 
-let mainActualTarget = getMainActualTarget(MyServiceElb)
-if mainActualTarget = green 
-    then 
-        deploy(MyServiceElbBlue)
-        setMainActualTarget(MyServiceElb) = blue
-    else
-        deploy(MyServiceElbGreen)
-        setMainActualTarget(MyServiceElb) = green
+createOrUpdateElb(ELBDefinition(mainDns,mainSubnet,mainVpc)):
 
-func deploy(MyServiceElbBlue, imageIdHash)
-    Ensure private subnet
+createOrUpdateSubnet(SubnetDefinition(vpc)):
 
+createOrUpdateElb(ElbDefinition(blueSubnet,mainVpc)):
 
+createOrUpdateASGLaunchTemplate(ElbLaunchTemplate):
 
-
-
-    Set Launch Template with imageHash
-    Set AutoScalingBlue
-    Ensure Launch Security Group is created
-
-        
-
-
-
-
+createOrUpdateGreenAutoScale(greenAutoScale,blueElb):
