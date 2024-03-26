@@ -17,7 +17,7 @@ Please design a program to do a zero downtime deploy using standard EC2 and rela
 
 # Pseudo code for full program
 
-let mainVpc = createOrUpdateVpc(VPCDefinition)
+OK -> let mainVpc = createOrUpdateVpc(VPCDefinition)
 let mainDns = createOrUpdateDns(DNSDefinition)
 let mainSubnet = createOrUpdateSubnet(SubnetDefinition(vpc))
 let mainElb = createOrUpdateElb(ELBDefinition(mainDns,mainSubnet,mainVpc))
