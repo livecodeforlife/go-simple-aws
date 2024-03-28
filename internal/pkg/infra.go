@@ -68,38 +68,38 @@ type DNS struct {
 
 // CreateVPC requests the creation of a VPC resource in the cloud, using the provided definition.
 func (i *Infra) CreateVPC(id string, resourceDef VPC) (*Resource[VPC], error) {
-	return create[VPC](i, id, resourceDef, i.provider.VPC())
+	return innerCreate[VPC](i, id, resourceDef, i.provider.VPC())
 }
 
 // CreateDNS requests the creation of a DNS record in the cloud, using the provided definition.
 func (i *Infra) CreateDNS(id string, resourceDef DNS) (*Resource[DNS], error) {
-	return create[DNS](i, id, resourceDef, i.provider.DNS())
+	return innerCreate[DNS](i, id, resourceDef, i.provider.DNS())
 }
 
 // CreateSubnet requests the creation of a Subnet resource in the cloud, using the provided definition.
 func (i *Infra) CreateSubnet(id string, resourceDef Subnet) (*Resource[Subnet], error) {
-	return create[Subnet](i, id, resourceDef, i.provider.Subnet())
+	return innerCreate[Subnet](i, id, resourceDef, i.provider.Subnet())
 }
 
 // CreateLoadBalancer requests the creation of a Subnet resource in the cloud, using the provided definition.
 func (i *Infra) CreateLoadBalancer(id string, resourceDef LoadBalancer) (*Resource[LoadBalancer], error) {
-	return create[LoadBalancer](i, id, resourceDef, i.provider.LoadBalancer())
+	return innerCreate[LoadBalancer](i, id, resourceDef, i.provider.LoadBalancer())
 }
 
 // CreateLaunchTemplate requests the creation of a LaunchTemplate resource in the cloud, using the provided definition.
 func (i *Infra) CreateLaunchTemplate(id string, resourceDef LaunchTemplate) (*Resource[LaunchTemplate], error) {
-	return create[LaunchTemplate](i, id, resourceDef, i.provider.LaunchTemplate())
+	return innerCreate[LaunchTemplate](i, id, resourceDef, i.provider.LaunchTemplate())
 }
 
 // CreateAutoScale requests the creation of a LaunchTemplate resource in the cloud, using the provided definition.
 func (i *Infra) CreateAutoScale(id string, resourceDef AutoScale) (*Resource[AutoScale], error) {
-	return create[AutoScale](i, id, resourceDef, i.provider.AutoScale())
+	return innerCreate[AutoScale](i, id, resourceDef, i.provider.AutoScale())
 }
 
-// create is a generic function that encapsulates common logic for resource creation.
+// innerCreate is a generic function that encapsulates common logic for resource creation.
 // It checks for the presence of a provider and resources, ensuring id uniqueness and provider
-// ability to create and store the resource.
-func create[T any](infra *Infra, id string, resourceDef T, manager ResourceManager[T]) (*Resource[T], error) {
+// ability to innerCreate and store the resource.
+func innerCreate[T any](infra *Infra, id string, resourceDef T, manager ResourceManager[T]) (*Resource[T], error) {
 	//Check initialization
 	if infra == nil {
 		return nil, fmt.Errorf("infra is nil")
