@@ -11,11 +11,29 @@ import (
 type TVPCCreator struct {
 	Response *Resource[VPC]
 	Err      error
+	creates  uint
+	updates  uint
+	deletes  uint
 }
 
 // CreateVPC simulates VPC creation, returning a predefined response or error.
 func (c *TVPCCreator) CreateVPC(r VPC) (*Resource[VPC], error) {
 	return c.Response, c.Err
+}
+
+// CreateVPC simulates VPC creation, returning a predefined response or error.
+func (c *TVPCCreator) Create(r VPC) (*Resource[VPC], error) {
+	return c.Response, c.Err
+}
+
+// CreateVPC simulates VPC creation, returning a predefined response or error.
+func (c *TVPCCreator) Update(r VPC, old *Resource[VPC]) (*Resource[VPC], error) {
+	return c.Response, c.Err
+}
+
+// CreateVPC simulates VPC creation, returning a predefined response or error.
+func (c *TVPCCreator) Delete(old *Resource[VPC]) error {
+	return c.Err
 }
 
 // TDNSCreator mocks the creation of DNS resources for testing.
@@ -69,12 +87,16 @@ type TestProvider struct {
 	TResourceStore
 }
 
+func (p *TestProvider) VPC() ResourceManager[VPC] {
+	return &p.TVPCCreator
+}
+
 // TestCreateResource evaluates the behavior of the createResource function under various conditions.
 func TestCreateResource(t *testing.T) {
 	// Tests the scenario where both the infra provider and resources are nil, expecting an error.
 	{
 		infra := &Infra{provider: nil, resources: nil}
-		_, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		_, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return &Resource[string]{id: "id", handler: "handler"}, nil
 		})
 		assert.NotNil(t, err)
@@ -86,7 +108,7 @@ func TestCreateResource(t *testing.T) {
 			provider:  &TestProvider{TResourceStore: TResourceStore{store: make(map[string]interface{})}},
 			resources: nil,
 		}
-		_, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		_, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return &Resource[string]{id: "id", handler: "handler"}, nil
 		})
 		assert.NotNil(t, err)
@@ -96,7 +118,7 @@ func TestCreateResource(t *testing.T) {
 	{
 		provider := &TestProvider{TResourceStore: TResourceStore{store: make(map[string]interface{})}}
 		infra := New(provider)
-		resource, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		resource, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return &Resource[string]{id: "id", handler: "handler"}, nil
 		})
 		assert.Equal(t, "id", resource.id)
@@ -110,7 +132,7 @@ func TestCreateResource(t *testing.T) {
 			provider:  &TestProvider{TResourceStore: TResourceStore{store: make(map[string]interface{})}},
 			resources: map[string]interface{}{"id": "id"},
 		}
-		_, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		_, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return &Resource[string]{id: "id", handler: "handler"}, nil
 		})
 		assert.NotNil(t, err)
@@ -120,7 +142,7 @@ func TestCreateResource(t *testing.T) {
 	{
 		provider := &TestProvider{TResourceStore: TResourceStore{store: map[string]interface{}{"id": nil}}}
 		infra := New(provider)
-		_, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		_, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return &Resource[string]{id: "id", handler: "handler"}, nil
 		})
 		assert.NotNil(t, err)
@@ -130,7 +152,7 @@ func TestCreateResource(t *testing.T) {
 	{
 		provider := &TestProvider{TResourceStore: TResourceStore{store: make(map[string]interface{})}}
 		infra := New(provider)
-		_, err := createResource(infra, "id", "def", func(string) (*Resource[string], error) {
+		_, err := apply(infra, "id", "def", func(string) (*Resource[string], error) {
 			return nil, fmt.Errorf("Error on creation")
 		})
 		assert.Equal(t, "Error on creation", fmt.Sprintf("%s", err))

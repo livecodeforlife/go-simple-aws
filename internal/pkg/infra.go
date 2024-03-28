@@ -10,10 +10,18 @@ type DefinitionStore interface {
 // Provider aggregates interfaces for creating cloud resources. Implementations of Provider
 // enable the creation of VPCs, DNS records, and subnets, along with managing their handlers.
 type Provider interface {
+	VPC() ResourceManager[VPC]
 	VPCCreator
 	DNSCreator
 	SubnetCreator
 	HandlerStore
+}
+
+// ResourceManager create or update
+type ResourceManager[T any] interface {
+	Create(resource T) (*Resource[T], error)
+	Update(resource T, old *Resource[T]) (*Resource[T], error)
+	Delete(old *Resource[T]) error
 }
 
 // HandlerStore abstracts the storage of handlers for cloud resources. Handlers represent
@@ -71,23 +79,23 @@ type DNS struct {
 
 // CreateVPC requests the creation of a VPC resource in the cloud, using the provided definition.
 func (i *Infra) CreateVPC(id string, resourceDef VPC) (*Resource[VPC], error) {
-	return createResource[VPC](i, id, resourceDef, i.provider.CreateVPC)
+	return apply[VPC](i, id, resourceDef, i.provider.CreateVPC)
 }
 
 // CreateSubnet requests the creation of a Subnet resource in the cloud, using the provided definition.
 func (i *Infra) CreateSubnet(id string, resourceDef Subnet) (*Resource[Subnet], error) {
-	return createResource[Subnet](i, id, resourceDef, i.provider.CreateSubnet)
+	return apply[Subnet](i, id, resourceDef, i.provider.CreateSubnet)
 }
 
 // CreateDNS requests the creation of a DNS record in the cloud, using the provided definition.
 func (i *Infra) CreateDNS(id string, resourceDef DNS) (*Resource[DNS], error) {
-	return createResource[DNS](i, id, resourceDef, i.provider.CreateDNS)
+	return apply[DNS](i, id, resourceDef, i.provider.CreateDNS)
 }
 
-// createResource is a generic function that encapsulates common logic for resource creation.
+// apply is a generic function that encapsulates common logic for resource creation.
 // It checks for the presence of a provider and resources, ensuring id uniqueness and provider
 // ability to create and store the resource.
-func createResource[T any](infra *Infra, id string, resourceDef T, create func(T) (*Resource[T], error)) (*Resource[T], error) {
+func apply[T any](infra *Infra, id string, resourceDef T, create func(T) (*Resource[T], error)) (*Resource[T], error) {
 	if infra.provider == nil || infra.resources == nil {
 		return nil, fmt.Errorf("missing provider or resources; ensure Infra is initialized with New")
 	}
@@ -96,6 +104,37 @@ func createResource[T any](infra *Infra, id string, resourceDef T, create func(T
 	}
 	if !infra.provider.Exists(id) {
 		resource, err := create(resourceDef)
+		if err != nil {
+			return nil, err
+		}
+		infra.provider.Set(id, resource)
+	}
+	handler, ok := infra.provider.Get(id).(*Resource[T])
+	if !ok || handler == nil {
+		return nil, fmt.Errorf("provider returned a nil or invalid handler for id %s", id)
+	}
+	infra.resources[id] = resourceDef
+	return handler, nil
+}
+
+// apply2 is a generic function that encapsulates common logic for resource creation.
+// It checks for the presence of a provider and resources, ensuring id uniqueness and provider
+// ability to create and store the resource.
+func apply2[T any](infra *Infra, id string, resourceDef T, resourceManager ResourceManager[T]) (*Resource[T], error) {
+	if infra.provider == nil || infra.resources == nil {
+		return nil, fmt.Errorf("missing provider or resources; ensure Infra is initialized with New")
+	}
+	if _, exists := infra.resources[id]; exists {
+		return nil, fmt.Errorf("resource with id %s already exists", id)
+	}
+	if !infra.provider.Exists(id) {
+		resource, err := resourceManager.Create(resourceDef)
+		if err != nil {
+			return nil, err
+		}
+		infra.provider.Set(id, resource)
+	} else {
+		resource, err := resourceManager.Update(resourceDef, infra.provider.Get(id).(*Resource[T]))
 		if err != nil {
 			return nil, err
 		}
