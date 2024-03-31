@@ -1,23 +1,39 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/livecodeforlife/go-simple-aws/internal/pkg/infra"
 )
 
 // New returns a new AWSProvider
-func New() infra.Provider {
-	return &Provider{}
+func New(region string) (infra.Provider, error) {
+	config, err := config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithRegion(region),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &Provider{
+		config,
+	}, nil
 }
 
 // Provider implements the infra.Provider interface
 type Provider struct {
+	config aws.Config
 }
 
 // VPC returns a VPC Manager
 func (p *Provider) VPC() infra.ResourceManager[infra.VPC] {
-	return &vpc{}
+	return &vpc{
+		client: ec2.NewFromConfig(p.config),
+	}
 }
 
 // DNS returns a DNS Manager
@@ -45,10 +61,21 @@ func (p *Provider) LaunchTemplate() infra.ResourceManager[infra.LaunchTemplate] 
 	return &launchTemplate{}
 }
 
-type vpc struct{}
+type vpc struct {
+	client *ec2.Client
+}
+type createVPC interface {
+	CreateVpc(context.Context, *ec2.CreateVpcInput, ...func(*ec2.Options)) (*ec2.CreateVpcOutput, error)
+}
 
 func (rm *vpc) Create(id string, r infra.VPC) (*infra.Resource[infra.VPC], error) {
-	return nil, fmt.Errorf("TODO: Need to implement")
+	output, err := rm.client.CreateVpc(context.TODO(), &ec2.CreateVpcInput{
+		CidrBlock: aws.String(r.CidrBlock),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return infra.NewResource[infra.VPC](id, output.Vpc), nil
 }
 
 func (rm *vpc) Delete(id string) error {
