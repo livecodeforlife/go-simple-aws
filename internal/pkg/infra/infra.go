@@ -21,6 +21,17 @@ type Resource[T any] struct {
 	handler interface{} // Provider-specific reference to the created resource.
 }
 
+// NewResource creates a new resource struct
+func NewResource[T any](id string, handler interface{}) *Resource[T] {
+	return &Resource[T]{id, handler}
+}
+func (r *Resource[T]) GetID() string {
+	return r.id
+}
+func (r *Resource[T]) GetHandler() interface{} {
+	return r.handler
+}
+
 // ResourceManager create or update resources
 type ResourceManager[T any] interface {
 	Create(id string, resourceDef T) (*Resource[T], error)
@@ -40,6 +51,7 @@ type Provider interface {
 
 // VPC represents the configuration for a Virtual Private Cloud to be deployed.
 type VPC struct {
+	CidrBlock string
 }
 
 // LoadBalancer is a Load Balancer
