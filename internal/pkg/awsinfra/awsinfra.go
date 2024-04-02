@@ -13,6 +13,16 @@ import (
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 )
 
+// Infra manages the lifecycle of cloud infrastructure components, such as creation,
+// update, and deletion.
+type Infra struct {
+	defaultRollback  bool                      //Experimental
+	resourceProvider ResourceProvider          // Provider implements resource creation interfaces.
+	resourceStore    ResourceStore             //Permanent datastore the syncs the infra
+	localStore       map[InternalID]ExternalID // Tracks created resources and avoid duplicated resources
+	resourceStack    resourceStack             //remembers the sequence of created elements to rollback
+}
+
 // New initializes a new infrastructure manager with the specified provider.
 func New(resourceProvicer ResourceProvider, resourceStore ResourceStore, withRollback bool) *Infra {
 	return &Infra{
@@ -29,16 +39,6 @@ type ExternalID = *string
 
 // InternalID is a unique identifier for a resource in the infrastructure manager.
 type InternalID = string
-
-// Infra manages the lifecycle of cloud infrastructure components, such as creation,
-// update, and deletion.
-type Infra struct {
-	withRollback     bool
-	resourceProvider ResourceProvider          // Provider implements resource creation interfaces.
-	resourceStore    ResourceStore             //Permanent datastore the syncs the infra
-	localStore       map[InternalID]ExternalID // Tracks created resources and avoid duplicated resources
-	resourceStack    resourceStack             //remembers the sequence of created elements to rollback
-}
 
 // ResourceManager create or update resources
 type ResourceManager[Input any, Output any] interface {
@@ -63,41 +63,41 @@ type ResourceStore interface {
 // ResourceProvider aggregates interfaces for creating cloud resources. Implementations of ResourceProvider
 // enable the creation of VPCs, DNS records, and subnets, along with managing their resource handlers.
 type ResourceProvider interface {
-	VPC() ResourceManager[ec2.CreateVpcInput, *ec2types.Vpc]
-	DNSRecordSet() ResourceManager[route53.ChangeResourceRecordSetsInput, *route53types.ResourceRecordSet]
-	Subnet() ResourceManager[ec2.CreateSubnetInput, *ec2types.Subnet]
-	LoadBalancer() ResourceManager[elbv2.CreateLoadBalancerInput, *elbv2types.LoadBalancer]
-	LaunchTemplate() ResourceManager[ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]
-	AutoScalingGroup() ResourceManager[autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]
+	VPC() ResourceManager[*ec2.CreateVpcInput, *ec2types.Vpc]
+	DNSRecordSet() ResourceManager[*route53.ChangeResourceRecordSetsInput, *route53types.ChangeInfo]
+	Subnet() ResourceManager[*ec2.CreateSubnetInput, *ec2types.Subnet]
+	LoadBalancer() ResourceManager[*elbv2.CreateLoadBalancerInput, []elbv2types.LoadBalancer]
+	LaunchTemplate() ResourceManager[*ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]
+	AutoScalingGroup() ResourceManager[*autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]
 }
 
 // CreateVPC requests the creation of a VPC resource in the cloud, using the provided definition.
-func (i *Infra) CreateVPC(id string, input ec2.CreateVpcInput) (*ec2types.Vpc, error) {
+func (i *Infra) CreateVPC(id string, input *ec2.CreateVpcInput) (*ec2types.Vpc, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.VPC())
 }
 
 // CreateDNS requests the creation of a DNS record in the cloud, using the provided definition.
-func (i *Infra) CreateDNS(id string, input route53.ChangeResourceRecordSetsInput) (*route53types.ResourceRecordSet, error) {
+func (i *Infra) CreateDNS(id string, input *route53.ChangeResourceRecordSetsInput) (*route53types.ChangeInfo, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.DNSRecordSet())
 }
 
 // CreateSubnet requests the creation of a Subnet resource in the cloud, using the provided definition.
-func (i *Infra) CreateSubnet(id string, input ec2.CreateSubnetInput) (*ec2types.Subnet, error) {
+func (i *Infra) CreateSubnet(id string, input *ec2.CreateSubnetInput) (*ec2types.Subnet, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.Subnet())
 }
 
 // CreateLoadBalancer requests the creation of a Subnet resource in the cloud, using the provided definition.
-func (i *Infra) CreateLoadBalancer(id string, input elbv2.CreateLoadBalancerInput) (*elbv2types.LoadBalancer, error) {
+func (i *Infra) CreateLoadBalancer(id string, input *elbv2.CreateLoadBalancerInput) ([]elbv2types.LoadBalancer, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.LoadBalancer())
 }
 
 // CreateLaunchTemplate requests the creation of a LaunchTemplate resource in the cloud, using the provided definition.
-func (i *Infra) CreateLaunchTemplate(id string, input ec2.CreateLaunchTemplateInput) (*ec2types.LaunchTemplate, error) {
+func (i *Infra) CreateLaunchTemplate(id string, input *ec2.CreateLaunchTemplateInput) (*ec2types.LaunchTemplate, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.LaunchTemplate())
 }
 
 // CreateAutoScale requests the creation of a LaunchTemplate resource in the cloud, using the provided definition.
-func (i *Infra) CreateAutoScale(id string, input autoscaling.CreateAutoScalingGroupInput) (*autoscalingtypes.AutoScalingGroup, error) {
+func (i *Infra) CreateAutoScale(id string, input *autoscaling.CreateAutoScalingGroupInput) (*autoscalingtypes.AutoScalingGroup, error) {
 	return createWithRollback(i, id, input, i.resourceProvider.AutoScalingGroup())
 }
 
@@ -140,10 +140,10 @@ func (i *Infra) Destroy() error {
 	return nil
 }
 
-func createWithRollback[Input any, Output any](infra *Infra, id string, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
+func createWithRollback[Input any, Output any](infra *Infra, id InternalID, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
 	output, err := create(infra, id, input, resourceManager)
 	if err != nil {
-		if !infra.withRollback {
+		if !infra.defaultRollback {
 			return output, err
 		}
 		if err := infra.Destroy(); err != nil { //Destroy all stacked resources
@@ -156,7 +156,7 @@ func createWithRollback[Input any, Output any](infra *Infra, id string, input In
 // create is a generic function that encapsulates common logic for resource creation.
 // It checks for the presence of a provider and resources, ensuring id uniqueness and provider
 // ability to innerCreate and store the resource.
-func create[Input any, Output any](infra *Infra, id string, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
+func create[Input any, Output any](infra *Infra, id InternalID, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
 	var output Output
 	var outputID ExternalID
 

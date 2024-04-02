@@ -1,23 +1,26 @@
 package main
 
 import (
+	"context"
 	"log"
 
-	"github.com/livecodeforlife/go-simple-aws/internal/pkg/infra"
-	awsp "github.com/livecodeforlife/go-simple-aws/internal/pkg/infra/provider/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 )
 
 func main() {
-	provider, err := awsp.New("us-east-2")
+	_, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
 	if err != nil {
-		log.Fatal("could not create aws provider")
+		log.Fatal("could not load aws config")
 	}
-	myinfra := infra.New(provider)
-	myvpc, err := myinfra.CreateVPC("myvpc", infra.VPC{
-		CidrBlock: "10.0.0.0/16",
-	})
-	if err != nil {
-		log.Fatal("could not create vpc")
-	}
-	log.Printf("%s %v", myvpc.GetID(), myvpc.GetHandler())
+	/*
+		//TODO; Create a Resource Store
+			myinfra := awsinfra.New(provider.NewResourceProvider(cfg))
+			myvpc, err := myinfra.CreateVPC("myvpc", infra.VPC{
+				CidrBlock: "10.0.0.0/16",
+			})
+			if err != nil {
+				log.Fatal("could not create vpc")
+			}
+			log.Printf("%s %v", myvpc.GetID(), myvpc.GetHandler())
+	*/
 }

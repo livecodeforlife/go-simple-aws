@@ -71,30 +71,30 @@ func (rm *TResourceManager[Input, Output]) Destroy(id ExternalID) error {
 
 // TestProvider aggregates mocks for various resource creators and a resource store.
 type TestProvider struct {
-	vpc            TResourceManager[ec2.CreateVpcInput, *ec2types.Vpc]
-	dns            TResourceManager[route53.ChangeResourceRecordSetsInput, *route53types.ResourceRecordSet]
-	subnet         TResourceManager[ec2.CreateSubnetInput, *ec2types.Subnet]
-	loadBalancer   TResourceManager[elbv2.CreateLoadBalancerInput, *elbv2types.LoadBalancer]
-	launchTemplate TResourceManager[ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]
-	autoScale      TResourceManager[autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]
+	vpc            TResourceManager[*ec2.CreateVpcInput, *ec2types.Vpc]
+	dns            TResourceManager[*route53.ChangeResourceRecordSetsInput, *route53types.ChangeInfo]
+	subnet         TResourceManager[*ec2.CreateSubnetInput, *ec2types.Subnet]
+	loadBalancer   TResourceManager[*elbv2.CreateLoadBalancerInput, []elbv2types.LoadBalancer]
+	launchTemplate TResourceManager[*ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]
+	autoScale      TResourceManager[*autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]
 }
 
-func (p *TestProvider) VPC() ResourceManager[ec2.CreateVpcInput, *ec2types.Vpc] {
+func (p *TestProvider) VPC() ResourceManager[*ec2.CreateVpcInput, *ec2types.Vpc] {
 	return &p.vpc
 }
-func (p *TestProvider) DNSRecordSet() ResourceManager[route53.ChangeResourceRecordSetsInput, *route53types.ResourceRecordSet] {
+func (p *TestProvider) DNSRecordSet() ResourceManager[*route53.ChangeResourceRecordSetsInput, *route53types.ChangeInfo] {
 	return &p.dns
 }
-func (p *TestProvider) Subnet() ResourceManager[ec2.CreateSubnetInput, *ec2types.Subnet] {
+func (p *TestProvider) Subnet() ResourceManager[*ec2.CreateSubnetInput, *ec2types.Subnet] {
 	return &p.subnet
 }
-func (p *TestProvider) LoadBalancer() ResourceManager[elbv2.CreateLoadBalancerInput, *elbv2types.LoadBalancer] {
+func (p *TestProvider) LoadBalancer() ResourceManager[*elbv2.CreateLoadBalancerInput, []elbv2types.LoadBalancer] {
 	return &p.loadBalancer
 }
-func (p *TestProvider) LaunchTemplate() ResourceManager[ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate] {
+func (p *TestProvider) LaunchTemplate() ResourceManager[*ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate] {
 	return &p.launchTemplate
 }
-func (p *TestProvider) AutoScalingGroup() ResourceManager[autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup] {
+func (p *TestProvider) AutoScalingGroup() ResourceManager[*autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup] {
 	return &p.autoScale
 }
 
@@ -123,23 +123,23 @@ func TestResourceCreation(t *testing.T) {
 		return expectedStore[id]
 	}
 	provider := &TestProvider{
-		vpc:            TResourceManager[ec2.CreateVpcInput, *ec2types.Vpc]{Output: &ec2types.Vpc{}, Eid: eid(VPCID)},
-		dns:            TResourceManager[route53.ChangeResourceRecordSetsInput, *route53types.ResourceRecordSet]{Output: &route53types.ResourceRecordSet{}, Eid: eid(DNSID)},
-		subnet:         TResourceManager[ec2.CreateSubnetInput, *ec2types.Subnet]{Output: &ec2types.Subnet{}, Eid: eid(SUBNETID)},
-		loadBalancer:   TResourceManager[elbv2.CreateLoadBalancerInput, *elbv2types.LoadBalancer]{Output: &elbv2types.LoadBalancer{}, Eid: eid(LBID)},
-		launchTemplate: TResourceManager[ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]{Output: &ec2types.LaunchTemplate{}, Eid: eid(LAUNCHTEMPLATEID)},
-		autoScale:      TResourceManager[autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]{Output: &autoscalingtypes.AutoScalingGroup{}, Eid: eid(AUTOSCALEID)},
+		vpc:            TResourceManager[*ec2.CreateVpcInput, *ec2types.Vpc]{Output: &ec2types.Vpc{}, Eid: eid(VPCID)},
+		dns:            TResourceManager[*route53.ChangeResourceRecordSetsInput, *route53types.ChangeInfo]{Output: &route53types.ChangeInfo{}, Eid: eid(DNSID)},
+		subnet:         TResourceManager[*ec2.CreateSubnetInput, *ec2types.Subnet]{Output: &ec2types.Subnet{}, Eid: eid(SUBNETID)},
+		loadBalancer:   TResourceManager[*elbv2.CreateLoadBalancerInput, []elbv2types.LoadBalancer]{Output: []elbv2types.LoadBalancer{}, Eid: eid(LBID)},
+		launchTemplate: TResourceManager[*ec2.CreateLaunchTemplateInput, *ec2types.LaunchTemplate]{Output: &ec2types.LaunchTemplate{}, Eid: eid(LAUNCHTEMPLATEID)},
+		autoScale:      TResourceManager[*autoscaling.CreateAutoScalingGroupInput, *autoscalingtypes.AutoScalingGroup]{Output: &autoscalingtypes.AutoScalingGroup{}, Eid: eid(AUTOSCALEID)},
 	}
 	store := &TResourceStore{
 		store: make(map[InternalID]ExternalID),
 	}
 	infra := New(provider, store, false)
-	testCreate(t, store, VPCID, eid(VPCID), &ec2types.Vpc{}, ec2.CreateVpcInput{}, infra.CreateVPC)
-	testCreate(t, store, DNSID, eid(DNSID), &route53types.ResourceRecordSet{}, route53.ChangeResourceRecordSetsInput{}, infra.CreateDNS)
-	testCreate(t, store, SUBNETID, eid(SUBNETID), &ec2types.Subnet{}, ec2.CreateSubnetInput{}, infra.CreateSubnet)
-	testCreate(t, store, LBID, eid(LBID), &elbv2types.LoadBalancer{}, elbv2.CreateLoadBalancerInput{}, infra.CreateLoadBalancer)
-	testCreate(t, store, LAUNCHTEMPLATEID, eid(LAUNCHTEMPLATEID), &ec2types.LaunchTemplate{}, ec2.CreateLaunchTemplateInput{}, infra.CreateLaunchTemplate)
-	testCreate(t, store, AUTOSCALEID, eid(AUTOSCALEID), &autoscalingtypes.AutoScalingGroup{}, autoscaling.CreateAutoScalingGroupInput{}, infra.CreateAutoScale)
+	testCreate(t, store, VPCID, eid(VPCID), &ec2types.Vpc{}, &ec2.CreateVpcInput{}, infra.CreateVPC)
+	testCreate(t, store, DNSID, eid(DNSID), &route53types.ChangeInfo{}, &route53.ChangeResourceRecordSetsInput{}, infra.CreateDNS)
+	testCreate(t, store, SUBNETID, eid(SUBNETID), &ec2types.Subnet{}, &ec2.CreateSubnetInput{}, infra.CreateSubnet)
+	testCreate(t, store, LBID, eid(LBID), []elbv2types.LoadBalancer{}, &elbv2.CreateLoadBalancerInput{}, infra.CreateLoadBalancer)
+	testCreate(t, store, LAUNCHTEMPLATEID, eid(LAUNCHTEMPLATEID), &ec2types.LaunchTemplate{}, &ec2.CreateLaunchTemplateInput{}, infra.CreateLaunchTemplate)
+	testCreate(t, store, AUTOSCALEID, eid(AUTOSCALEID), &autoscalingtypes.AutoScalingGroup{}, &autoscaling.CreateAutoScalingGroupInput{}, infra.CreateAutoScale)
 }
 
 func testCreate[Input any, Output any](t *testing.T, store ResourceStore, id InternalID, expectedExternalID ExternalID, expectedOutput Output, input Input, create func(id InternalID, input Input) (Output, error)) {
@@ -168,7 +168,7 @@ func Test_create(t *testing.T) {
 			name: "Given a well initialized Infra, an id and an input, should return the expected output",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore:    &TResourceStore{store: make(map[InternalID]ExternalID)},
 					localStore:       make(map[string]*string),
@@ -187,7 +187,7 @@ func Test_create(t *testing.T) {
 			name: "When resouce provider is null, should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: nil,
 					resourceStore:    &TResourceStore{store: make(map[InternalID]ExternalID)},
 					localStore:       make(map[string]*string),
@@ -207,7 +207,7 @@ func Test_create(t *testing.T) {
 			name: "When resource store is null, should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore:    nil,
 					localStore:       make(map[string]*string),
@@ -227,7 +227,7 @@ func Test_create(t *testing.T) {
 			name: "When local store is nill, should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore:    &TResourceStore{store: make(map[InternalID]ExternalID)},
 					localStore:       nil,
@@ -247,7 +247,7 @@ func Test_create(t *testing.T) {
 			name: "Given a well initialized Infra, a blank id and an input, should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore:    &TResourceStore{store: make(map[InternalID]ExternalID)},
 					localStore:       make(map[string]*string),
@@ -268,7 +268,7 @@ func Test_create(t *testing.T) {
 			name: "When trying to create with an already existing id on local store, should generate an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore:    &TResourceStore{store: make(map[InternalID]ExternalID)},
 					localStore: map[InternalID]ExternalID{
@@ -291,7 +291,7 @@ func Test_create(t *testing.T) {
 			name: "When resource store generates an error, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: fmt.Errorf("Exists error"),
@@ -315,7 +315,7 @@ func Test_create(t *testing.T) {
 			name: "When resource manager fails to create, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -340,7 +340,7 @@ func Test_create(t *testing.T) {
 			name: "When resource store fails to set, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -366,7 +366,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, if resource store fails to get, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -395,7 +395,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, if resource manager fails to Load, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -425,7 +425,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, if resource manager fails to Update, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -455,7 +455,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, if resource manager returns a different ExternalID and store fails to set, then should return an error",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -485,7 +485,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, if resource manager returns a different ExternalID, then should return the expected output",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -514,7 +514,7 @@ func Test_create(t *testing.T) {
 			name: "When resource exists on external store, and external IDS are the same, then should return the expected output",
 			args: args{
 				infra: &Infra{
-					withRollback:     false,
+					defaultRollback:  false,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -543,7 +543,7 @@ func Test_create(t *testing.T) {
 			name: "When rollback is active, if fail after the creation, then should rollback",
 			args: args{
 				infra: &Infra{
-					withRollback:     true,
+					defaultRollback:  true,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
@@ -571,7 +571,7 @@ func Test_create(t *testing.T) {
 			name: "When rolling back, if destroy generated an error, then should return the error",
 			args: args{
 				infra: &Infra{
-					withRollback:     true,
+					defaultRollback:  true,
 					resourceProvider: &TestProvider{},
 					resourceStore: &TResourceStore{
 						existsErr: nil,
