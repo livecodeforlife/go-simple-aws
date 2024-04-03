@@ -4,16 +4,19 @@
 name: Go
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
 
   build:
     runs-on: ubuntu-latest
     steps:
+
     - uses: actions/checkout@v4
 
     - name: Set up Go
@@ -26,3 +29,18 @@ jobs:
 
     - name: Build
       run: go build -v ./...
+
+  deploy:
+    runs-on: ubuntu-latest
+    environment: testing
+    needs: build
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+
+    - name: configure aws credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.ROLE_TO_ASSUME }}
+        role-session-name: testing-session
+        aws-region: ${{ env.AWS_REGION }}
