@@ -40,6 +40,17 @@ type ExternalID = *string
 // InternalID is a unique identifier for a resource in the infrastructure manager.
 type InternalID = string
 
+// Resource is an interface to help generic code
+type Resource interface {
+	ID() InternalID
+}
+
+// relation enables relationship between elements
+type relation[INPUT any, TARGET any] struct {
+	ID     InternalID
+	ApplyF func(INPUT, TARGET)
+}
+
 // ResourceManager create or update resources
 type ResourceManager[Input any, Output any] interface {
 	Create(input Input) (ExternalID, Output, error)
@@ -138,6 +149,10 @@ func (i *Infra) Destroy() error {
 		delete(i.localStore, rs.id) //deletes the id from the localStore, so it can be reused
 	}
 	return nil
+}
+
+func createWithDependencies[Input any, Output any](infra *Infra, id InternalID, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
+	return createWithRollback(infra, id, input, resourceManager)
 }
 
 func createWithRollback[Input any, Output any](infra *Infra, id InternalID, input Input, resourceManager ResourceManager[Input, Output]) (Output, error) {
