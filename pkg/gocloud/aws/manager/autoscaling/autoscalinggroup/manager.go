@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
-	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
-	"github.com/livecodeforlife/go-simple-aws/internal/pkg/awsinfra"
+	"github.com/livecodeforlife/go-simple-aws/pkg/gocloud/aws/types"
 )
 
-// New Creates a new instsance of the resource manager
-func New(client *autoscaling.Client) awsinfra.ResourceManager[*autoscaling.CreateAutoScalingGroupInput, *types.AutoScalingGroup] {
+// NewFromConfig Creates a new instance of the resource manager
+func NewFromConfig(config aws.Config) types.AutoScalingGroupResourceManager {
 	return &manager{
-		client,
+		client: autoscaling.NewFromConfig(config),
 	}
 }
 
@@ -20,7 +20,7 @@ type manager struct {
 	client *autoscaling.Client
 }
 
-func (rm *manager) Create(input *autoscaling.CreateAutoScalingGroupInput) (awsinfra.ExternalID, *types.AutoScalingGroup, error) {
+func (rm *manager) Create(input *types.AutoScalingGroupInput) (*types.AutoScalingGroupID, *types.AutoScalingGroupOutput, error) {
 	if *input.AutoScalingGroupName == "" {
 		return nil, nil, fmt.Errorf("AutoScalingGroupName is required and is used as the external id")
 	}
@@ -28,17 +28,17 @@ func (rm *manager) Create(input *autoscaling.CreateAutoScalingGroupInput) (awsin
 	if err != nil {
 		return nil, nil, err
 	}
-	asg, err := rm.Load(input.AutoScalingGroupName)
+	asg, err := rm.Retrieve(input.AutoScalingGroupName)
 	if err != nil {
 		return nil, nil, err
 	}
 	return asg.AutoScalingGroupName, asg, nil
 }
 
-func (rm *manager) Update(input *autoscaling.CreateAutoScalingGroupInput, last *types.AutoScalingGroup) (awsinfra.ExternalID, *types.AutoScalingGroup, error) {
+func (rm *manager) Update(id *types.AutoScalingGroupID, input *types.AutoScalingGroupInput) (*types.AutoScalingGroupID, *types.AutoScalingGroupOutput, error) {
 	return nil, nil, fmt.Errorf("TODO: Need to implement")
 }
-func (rm *manager) Load(id awsinfra.ExternalID) (*types.AutoScalingGroup, error) {
+func (rm *manager) Retrieve(id *types.AutoScalingGroupID) (*types.AutoScalingGroupOutput, error) {
 	output, err := rm.client.DescribeAutoScalingGroups(context.TODO(), &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []string{*id},
 	})
@@ -51,6 +51,6 @@ func (rm *manager) Load(id awsinfra.ExternalID) (*types.AutoScalingGroup, error)
 	return &output.AutoScalingGroups[0], nil
 }
 
-func (rm *manager) Destroy(id awsinfra.ExternalID) error {
-	return fmt.Errorf("TODO: Need to implement")
+func (rm *manager) Delete(id *types.AutoScalingGroupID) (bool, error) {
+	return false, fmt.Errorf("TODO: Need to implement")
 }

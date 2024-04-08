@@ -1,33 +1,37 @@
-package coreinfra
+package core
 
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"reflect"
 )
 
 // AddDependency creates a dependency to a Resource Input before its creation
-func AddDependency[MyInput, Input any, Output any, EID any](storer ResourceStorer, self *LazyResource[MyInput], other *LazyResource[Input], applyF func(MyInput, *Resource[Input, Output, EID]) error) {
+func AddDependency[MyInput, Input any, Output any, CloudID any](storer ResourceStorer, self *LazyResource[MyInput], other *LazyResource[Input], applyF func(MyInput, *Resource[Input, Output, CloudID]) error) {
 	self.dependencies = append(
 		self.dependencies,
 		dependency{
 			id: other.ID(),
 			applyF: func() error {
 				if applyF != nil {
-					otherResource, err := getStoreResource[Input, Output, EID](storer, other.ID())
+					otherResource, err := getStoreResource[Input, Output, CloudID](storer, other.ID())
 					if err != nil {
 						return err
 					}
+					log.Printf("%v", self.input)
+					log.Printf("%v", otherResource)
+
 					if err := applyF(self.input, otherResource); err != nil {
 						return err
 					}
-
 				}
 				return nil
 			}})
 }
 
 // CreateResource is a function that creates a future resource
-func CreateResource[Input any, Output any, EID any](planner Planner, storer ResourceStorer, manager ResourceManager[Input, Output, EID], id ID, input Input, dependsOn ...ID) (*LazyResource[Input], error) {
+func CreateResource[Input any, Output any, CloudID any](planner Planner, storer ResourceStorer, manager ResourceManager[Input, Output, CloudID], id ID, input Input, dependsOn ...ID) (*LazyResource[Input], error) {
 	if planner == nil {
 		return nil, &Error{ErrMissingResourcePlanner, nil}
 	}
@@ -42,13 +46,19 @@ func CreateResource[Input any, Output any, EID any](planner Planner, storer Reso
 	}
 	resource := &LazyResource[Input]{
 		id:           id,
+		input:        input,
 		dependencies: []dependency{},
-		createFn: func() error {
-			_, err := createOrUpdateResourceStrict[Input, Output, EID](storer, manager, id, input)
+		createFn: func(deps []dependency) error {
+			for _, dep := range deps {
+				if err := dep.applyF(); err != nil {
+					return err
+				}
+			}
+			_, err := createOrUpdateResourceStrict[Input, Output, CloudID](storer, manager, id, input)
 			return err
 		},
 		deleteFn: func() (bool, error) {
-			return deleteResourceStrict[Input, Output, EID](storer, manager, id)
+			return deleteResourceStrict[Input, Output, CloudID](storer, manager, id)
 		},
 	}
 	if err := planner.AddResource(resource); err != nil {
@@ -61,7 +71,7 @@ func CreateResource[Input any, Output any, EID any](planner Planner, storer Reso
 // ApplyPlan build all planned resources
 func ApplyPlan(planner Planner) error {
 	for _, resource := range planner.TopoSortForCreation() {
-		if err := resource.getCreateFn()(); err != nil {
+		if err := resource.CreateFn()(resource.Dependencies()); err != nil {
 			return err
 		}
 	}
@@ -71,42 +81,11 @@ func ApplyPlan(planner Planner) error {
 // DestroyPlan all planned resources
 func DestroyPlan(planner Planner) error {
 	for _, resource := range planner.TopoSortForDeletion() {
-		if _, err := resource.getDeleteFn(); err != nil {
+		if _, err := resource.DeleteFn(); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// NewSimplePlanner creates a new planner to be used inside the infra package
-func NewSimplePlanner() Planner {
-	return &simplePlanner{}
-}
-
-type simplePlanner struct {
-	resources []lazyResource
-}
-
-func (p *simplePlanner) AddResource(resource lazyResource) error {
-	p.resources = append(p.resources, resource)
-	return nil
-}
-
-func (p *simplePlanner) TopoSortForCreation() []lazyResource {
-	return p.resources
-}
-
-func (p *simplePlanner) TopoSortForDeletion() []lazyResource {
-	return reverseSliceCopy(p.resources)
-}
-
-func reverseSliceCopy[T any](s []T) []T {
-	sc := make([]T, len(s))
-	copy(sc, s)
-	for i, j := 0, len(sc)-1; i < j; i, j = i+1, j-1 {
-		sc[i], sc[j] = sc[j], sc[i]
-	}
-	return sc
 }
 
 // LazyResource is a resource to be generated
@@ -114,7 +93,7 @@ type LazyResource[Input any] struct {
 	id           ID
 	input        Input
 	dependencies []dependency
-	createFn     func() error
+	createFn     func([]dependency) error
 	deleteFn     func() (bool, error)
 }
 
@@ -127,40 +106,37 @@ type dependency struct {
 func (r *LazyResource[Input]) ID() ID {
 	return r.id
 }
-func (r *LazyResource[Input]) getCreateFn() func() error {
+func (r *LazyResource[Input]) CreateFn() func([]dependency) error {
 	return r.createFn
 }
-func (r *LazyResource[Input]) getDeleteFn() (bool, error) {
+func (r *LazyResource[Input]) DeleteFn() (bool, error) {
 	return r.deleteFn()
 }
-func (r *LazyResource[Input]) getDependencies() []dependency {
+func (r *LazyResource[Input]) Dependencies() []dependency {
 	return r.dependencies
 }
 
-type lazyResource interface {
+// LazyResourceInterface is a LazyResource without generics
+type LazyResourceInterface interface {
 	ID() ID
-	getDependencies() []dependency
-	getCreateFn() func() error
-	getDeleteFn() (bool, error)
+	Dependencies() []dependency
+	CreateFn() func([]dependency) error
+	DeleteFn() (bool, error)
 }
 
 // ID represents a unique identifier within this package.
 type ID string
 
-// ExtID is an interface for managing external IDs given by cloud providers,
-// allowing conversion between a generic type and its string representation.
-type ExtID[EID any] interface {
-	FromStr(string) EID
-	ToStr(EID) string
-}
+// CloudID is
+type CloudID string
 
 // ResourceManager is the interface that outlines methods for creating, retrieving,
 // updating, and deleting resources, abstracting over specific cloud provider implementations.
-type ResourceManager[Input any, Output any, EID any] interface {
-	Create(Input) (ExtID[EID], Output, error)
-	Retrieve(ExtID[EID]) (Output, error)
-	Update(ExtID[EID], Input) (ExtID[EID], Output, error)
-	Delete(ExtID[EID]) (bool, error)
+type ResourceManager[Input any, Output any, CloudID any] interface {
+	Create(Input) (CloudID, Output, error)
+	Retrieve(CloudID) (Output, error)
+	Update(CloudID, Input) (CloudID, Output, error)
+	Delete(CloudID) (bool, error)
 }
 
 // ResourceStorer is the interface for persisting resource information, providing
@@ -170,23 +146,25 @@ type ResourceStorer interface {
 	Get(ID) ([]byte, error)
 	Set(ID, []byte) error
 	Delete(ID) error
+	Load() error
+	Save() error
 }
 
 // Planner is a planner that creates elements in the right order, respecting dependencies
 type Planner interface {
-	AddResource(lazyResource) error
-	TopoSortForCreation() []lazyResource
-	TopoSortForDeletion() []lazyResource
+	AddResource(LazyResourceInterface) error
+	TopoSortForCreation() []LazyResourceInterface
+	TopoSortForDeletion() []LazyResourceInterface
 }
 
 // Resource represents an initialized cloud resource, encapsulating its input and output data,
 // unique identifiers, and dependencies on other resources.
-type Resource[Input any, Output any, EID any] struct {
-	id        ID
-	extID     ExtID[EID]
-	input     Input
-	output    Output
-	dependsOn []ID
+type Resource[Input any, Output any, CloudID any] struct {
+	ID        ID
+	CloudID   CloudID
+	Input     Input
+	Output    Output
+	DependsOn []ID
 }
 
 // createOrUpdateResourceStrict encapsulates the logic for creating or updating a resource.
@@ -195,7 +173,7 @@ type Resource[Input any, Output any, EID any] struct {
 // Checks for the presence of necessary components and validates the provided ID.
 // On passing the checks, it either creates a new resource or updates an existing one,
 // finally persisting the resource state.
-func createOrUpdateResourceStrict[Input any, Output any, EID any](storer ResourceStorer, manager ResourceManager[Input, Output, EID], id ID, input Input) (*Resource[Input, Output, EID], error) {
+func createOrUpdateResourceStrict[Input any, Output any, CloudID any](storer ResourceStorer, manager ResourceManager[Input, Output, CloudID], id ID, input Input) (*Resource[Input, Output, CloudID], error) {
 
 	if storer == nil {
 		return nil, &Error{ErrMissingResourceStore, nil}
@@ -209,7 +187,7 @@ func createOrUpdateResourceStrict[Input any, Output any, EID any](storer Resourc
 		return nil, &Error{ErrBlankResourceID, nil}
 	}
 
-	var resource *Resource[Input, Output, EID]
+	var resource *Resource[Input, Output, CloudID]
 
 	exists, err := storer.Exists(id)
 	if err != nil {
@@ -222,7 +200,7 @@ func createOrUpdateResourceStrict[Input any, Output any, EID any](storer Resourc
 			return nil, err
 		}
 	} else {
-		resource, err = updateResource[Input, Output, EID](storer, manager, id, input)
+		resource, err = updateResource[Input, Output, CloudID](storer, manager, id, input)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +214,7 @@ func createOrUpdateResourceStrict[Input any, Output any, EID any](storer Resourc
 // deleteResourceStrict encapsulates the logic for safely deleting a resource.
 // It checks for authorization, verifies the resource's existence, and if authorized,
 // proceeds with deletion using the ResourceManager.
-func deleteResourceStrict[Input any, Output any, EID any](storer ResourceStorer, manager ResourceManager[Input, Output, EID], id ID) (bool, error) {
+func deleteResourceStrict[Input any, Output any, CloudID any](storer ResourceStorer, manager ResourceManager[Input, Output, CloudID], id ID) (bool, error) {
 
 	// Implementation ensures the presence of necessary components and valid ID.
 	// If checks pass, it proceeds to delete the resource and notifies the authorizer.
@@ -257,7 +235,7 @@ func deleteResourceStrict[Input any, Output any, EID any](storer ResourceStorer,
 		//return false because did not update
 		return false, nil
 	}
-	deleted, err := deleteResource[Input, Output, EID](storer, manager, id)
+	deleted, err := deleteResource[Input, Output, CloudID](storer, manager, id)
 	if err != nil {
 		return false, err
 	}
@@ -265,47 +243,22 @@ func deleteResourceStrict[Input any, Output any, EID any](storer ResourceStorer,
 
 }
 
-// ID returns the unique identifier of the resource.
-func (r *Resource[Input, Output, EID]) ID() ID {
-	return r.id
-}
-
-// ExtID returns the external ID of the resource provided by the cloud provider.
-func (r *Resource[Input, Output, EID]) ExtID() ExtID[EID] {
-	return r.extID
-}
-
-// Input returns the input data used to create or update the resource.
-func (r *Resource[Input, Output, EID]) Input() Input {
-	return r.input
-}
-
-// Output returns the output data from the cloud provider about the resource.
-func (r *Resource[Input, Output, EID]) Output() Output {
-	return r.output
-}
-
-// DependsOn returns a list of IDs that the resource depends on.
-func (r *Resource[Input, Output, EID]) DependsOn() []ID {
-	return r.dependsOn
-}
-
 // ToJSON serializes the Resource into JSON bytes for storage.
-func (r *Resource[Input, Output, EID]) ToJSON() ([]byte, error) {
+func (r *Resource[Input, Output, CloudID]) ToJSON() ([]byte, error) {
 	return json.Marshal(r)
 }
 
 // FromJSON deserializes JSON bytes back into a Resource struct.
-func (r *Resource[Input, Output, EID]) FromJSON(b []byte) error {
+func (r *Resource[Input, Output, CloudID]) FromJSON(b []byte) error {
 	return json.Unmarshal(b, r)
 }
 
-func deleteResource[Input any, Output any, EID any](storer ResourceStorer, manager ResourceManager[Input, Output, EID], id ID) (bool, error) {
-	resource, err := getStoreResource[Input, Output, EID](storer, id)
+func deleteResource[Input any, Output any, CloudID any](storer ResourceStorer, manager ResourceManager[Input, Output, CloudID], id ID) (bool, error) {
+	resource, err := getStoreResource[Input, Output, CloudID](storer, id)
 	if err != nil {
 		return false, err
 	}
-	deleted, err := manager.Delete(resource.extID)
+	deleted, err := manager.Delete(resource.CloudID)
 	if err != nil {
 		return false, &Error{ErrResourceManagerUpdate, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
 	}
@@ -313,45 +266,65 @@ func deleteResource[Input any, Output any, EID any](storer ResourceStorer, manag
 	return deleted, nil
 }
 
-func updateResource[Input any, Output any, EID any](storer ResourceStorer, manager ResourceManager[Input, Output, EID], id ID, input Input) (*Resource[Input, Output, EID], error) {
-	resource, err := getStoreResource[Input, Output, EID](storer, id)
+func updateResource[Input any, Output any, CloudID any](storer ResourceStorer, manager ResourceManager[Input, Output, CloudID], id ID, input Input) (*Resource[Input, Output, CloudID], error) {
+	resource, err := getStoreResource[Input, Output, CloudID](storer, id)
 	if err != nil {
 		return nil, err
 	}
-	extID, output, err := manager.Update(resource.extID, input)
+	if reflect.DeepEqual(input, resource.Input) {
+		log.Printf("Resource Input did not change %v", resource.ID)
+		return resource, nil //Returns the resource from the store instead of updating
+	}
+
+	/*
+		output, err := manager.Retrieve(resource.CloudID)
+		if err != nil {
+			return nil, &Error{ErrResourceManagerUpdate, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
+		}
+		if reflect.DeepEqual(output, resource.Output) {
+			log.Printf("Resource Output did not change %v", resource.ID)
+			return resource, nil
+		}
+		fmt.Println("===================================")
+		spew.Dump(resource.Output)
+		fmt.Println("===================================")
+		spew.Dump(output)
+	*/
+
+	extID, output, err := manager.Update(resource.CloudID, input)
 	if err != nil {
 		return nil, &Error{ErrResourceManagerUpdate, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
 	}
-	return &Resource[Input, Output, EID]{
-		id:        id,
-		extID:     extID,
-		input:     input,
-		output:    output,
-		dependsOn: resource.dependsOn,
+	return &Resource[Input, Output, CloudID]{
+		ID:        id,
+		CloudID:   extID,
+		Input:     input,
+		Output:    output,
+		DependsOn: resource.DependsOn,
 	}, nil
 }
 
-func setStoreResource[Input any, Output any, EID any](storer ResourceStorer, resource *Resource[Input, Output, EID]) error {
+func setStoreResource[Input any, Output any, CloudID any](storer ResourceStorer, resource *Resource[Input, Output, CloudID]) error {
 	resourceAsBytes, err := resource.ToJSON()
 	if err != nil {
-		return &Error{ErrResourceToBytes, fmt.Errorf("ID: %s, Caused by %v ", resource.id, err)}
+		return &Error{ErrResourceToBytes, fmt.Errorf("ID: %s, Caused by %v ", resource.ID, err)}
 	}
-	if err = storer.Set(resource.id, resourceAsBytes); err != nil {
-		return &Error{ErrResourceStoreSet, fmt.Errorf("ID: %s, Caused by %v ", resource.id, err)}
+	if err = storer.Set(resource.ID, resourceAsBytes); err != nil {
+		return &Error{ErrResourceStoreSet, fmt.Errorf("ID: %s, Caused by %v ", resource.ID, err)}
 	}
 	return nil
 }
 
-func deleteStoreResource[Input any, Output any, EID any](storer ResourceStorer, resource *Resource[Input, Output, EID]) error {
-	err := storer.Delete(resource.id)
+func deleteStoreResource[Input any, Output any, CloudID any](storer ResourceStorer, resource *Resource[Input, Output, CloudID]) error {
+	err := storer.Delete(resource.ID)
 	if err != nil {
-		return &Error{ErrResourceStoreDelete, fmt.Errorf("ID: %s, Caused by %v ", resource.id, err)}
+		return &Error{ErrResourceStoreDelete, fmt.Errorf("ID: %s, Caused by %v ", resource.ID, err)}
 	}
 	return nil
 }
 
-func getStoreResource[Input any, Output any, EID any](storer ResourceStorer, id ID) (*Resource[Input, Output, EID], error) {
-	var resource *Resource[Input, Output, EID]
+func getStoreResource[Input any, Output any, CloudID any](storer ResourceStorer, id ID) (*Resource[Input, Output, CloudID], error) {
+	var resource Resource[Input, Output, CloudID]
 	resourceJSON, err := storer.Get(id)
 	if err != nil {
 		return nil, &Error{ErrResourceStoreGet, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
@@ -359,19 +332,19 @@ func getStoreResource[Input any, Output any, EID any](storer ResourceStorer, id 
 	if err := resource.FromJSON(resourceJSON); err != nil {
 		return nil, &Error{ErrResourceLoadFromBytes, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
 	}
-	return resource, nil
+	return &resource, nil
 }
 
-func createResource[Input any, Output any, EID any](manager ResourceManager[Input, Output, EID], id ID, input Input) (*Resource[Input, Output, EID], error) {
+func createResource[Input any, Output any, CloudID any](manager ResourceManager[Input, Output, CloudID], id ID, input Input) (*Resource[Input, Output, CloudID], error) {
 	extID, output, err := manager.Create(input)
 	if err != nil {
 		return nil, &Error{ErrResourceManagerCreate, fmt.Errorf("ID: %s, Caused by %v ", id, err)}
 	}
-	return &Resource[Input, Output, EID]{
-		id:     id,
-		extID:  extID,
-		input:  input,
-		output: output,
+	return &Resource[Input, Output, CloudID]{
+		ID:      id,
+		CloudID: extID,
+		Input:   input,
+		Output:  output,
 	}, nil
 }
 

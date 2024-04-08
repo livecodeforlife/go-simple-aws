@@ -7,14 +7,13 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
-	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	"github.com/livecodeforlife/go-simple-aws/internal/pkg/awsinfra"
+	"github.com/livecodeforlife/go-simple-aws/pkg/gocloud/aws/types"
 )
 
-// New Creates a new instsance of the resource manager
-func New(client *elasticloadbalancingv2.Client) awsinfra.ResourceManager[*elasticloadbalancingv2.CreateLoadBalancerInput, []types.LoadBalancer] {
+// NewFromConfig Creates a new instsance of the resource manager
+func NewFromConfig(config aws.Config) types.LoadBalancerResourceManager {
 	return &manager{
-		client,
+		client: elasticloadbalancingv2.NewFromConfig(config),
 	}
 }
 
@@ -22,7 +21,7 @@ type manager struct {
 	client *elasticloadbalancingv2.Client
 }
 
-func (rm *manager) Create(input *elasticloadbalancingv2.CreateLoadBalancerInput) (awsinfra.ExternalID, []types.LoadBalancer, error) {
+func (rm *manager) Create(input *types.LoadBalancerInput) (*types.LoadBalancerID, []types.LoadBalancerOutput, error) {
 	output, err := rm.client.CreateLoadBalancer(context.TODO(), input)
 	if err != nil {
 		return nil, nil, err
@@ -41,11 +40,11 @@ func (rm *manager) Create(input *elasticloadbalancingv2.CreateLoadBalancerInput)
 	return aws.String(string(loadBalancerArns)), output.LoadBalancers, nil
 }
 
-func (rm *manager) Update(input *elasticloadbalancingv2.CreateLoadBalancerInput, last []types.LoadBalancer) (awsinfra.ExternalID, []types.LoadBalancer, error) {
+func (rm *manager) Update(id *types.LoadBalancerID, input *types.LoadBalancerInput) (*types.LoadBalancerID, []types.LoadBalancerOutput, error) {
 	return nil, nil, fmt.Errorf("TODO: Need to implement")
 }
 
-func (rm *manager) Load(id awsinfra.ExternalID) ([]types.LoadBalancer, error) {
+func (rm *manager) Retrieve(id *types.LoadBalancerID) ([]types.LoadBalancerOutput, error) {
 	var loadBalancerArns []string
 	if err := json.Unmarshal([]byte(*id), &loadBalancerArns); err != nil {
 		return nil, err
@@ -59,6 +58,6 @@ func (rm *manager) Load(id awsinfra.ExternalID) ([]types.LoadBalancer, error) {
 	return output.LoadBalancers, nil
 }
 
-func (rm *manager) Destroy(id awsinfra.ExternalID) error {
-	return fmt.Errorf("TODO: Need to implement")
+func (rm *manager) Delete(id *types.LoadBalancerID) (bool, error) {
+	return false, fmt.Errorf("TODO: Need to implement")
 }
